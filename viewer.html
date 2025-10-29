@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PPOO KL3 - Visor móvil</title>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root { --bg:#0f172a; --card:#ffffff; --muted:#64748b; --accent:#0ea5e9; --danger:#ef4444; }
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto; background:var(--bg); color:#111}
+    .wrap{max-width:950px;margin:0 auto;padding:16px}
+    .card{background:var(--card);border-radius:14px;box-shadow:0 8px 20px rgba(0,0,0,.15);padding:16px}
+    h1{font-size:20px;margin:0 0 12px}
+    .muted{color:var(--muted);font-size:14px}
+
+    .stack{display:flex;flex-direction:column;gap:10px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .row > *{flex:1}
+    .row.shrink > *{flex:0}
+    label{font-size:12px;color:#334155}
+    input,select,button{
+      width:100%; padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; font-size:15px; outline:none;
+    }
+    input:focus,select:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(14,165,233,.15)}
+    button{background:var(--accent); color:#fff; border:none; cursor:pointer}
+    button:disabled{opacity:.6; cursor:not-allowed}
+    .btn-outline{background:#fff;color:#111;border:1px solid #e5e7eb}
+    .error{color:var(--danger); font-size:14px}
+
+    .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .spacer{flex:1}
+    .chip{background:#f1f5f9;border-radius:999px;padding:6px 10px;font-size:12px;color:#334155}
+
+    .table-wrap{overflow:auto; border:1px solid #e5e7eb; border-radius:12px}
+    table{border-collapse:separate;border-spacing:0;width:100%;min-width:900px}
+    thead th{position:sticky;top:0;background:#f8fafc;font-weight:600;font-size:13px;color:#334155;border-bottom:1px solid #e5e7eb;padding:10px;text-align:left}
+    tbody td{border-bottom:1px solid #f1f5f9;padding:10px;font-size:14px}
+    tr:hover td{background:#fafafa}
+    .tag{font-size:12px;padding:4px 8px;border-radius:999px; background:#e2f2ff; color:#0b6aa8; display:inline-block}
+
+    .center{display:flex;align-items:center;justify-content:center;min-height:60vh}
+    .hidden{display:none}
+    .footer{color:#cbd5e1;font-size:12px;text-align:center;margin-top:14px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- LOGIN -->
+    <div id="loginCard" class="card stack">
+      <h1>Ingreso al visor</h1>
+      <div class="row">
+        <div>
+          <label>Email</label>
+          <input id="email" type="email" placeholder="usuario@ejemplo.com" autocomplete="username" />
+        </div>
+        <div>
+          <label>Contraseña</label>
+          <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+      </div>
+      <div class="row shrink">
+        <button id="btnLogin" style="min-width:140px">Ingresar</button>
+        <button id="btnBusy" class="btn-outline hidden" disabled>Ingresando…</button>
+      </div>
+      <div id="loginError" class="error"></div>
+      <div class="muted">Acceso de solo lectura (rol <b>viewer</b>).</div>
+    </div>
+
+    <!-- DATA -->
+    <div id="dataCard" class="card stack hidden">
+      <div class="toolbar">
+        <h1 style="margin:0">Control de Correspondencia · Visor</h1>
+        <span id="userChip" class="chip"></span>
+        <div class="spacer"></div>
+        <select id="estado">
+          <option value="__ALL__">Todos los estados</option>
+          <option>Recibido</option>
+          <option>En Proceso</option>
+          <option>Concluido</option>
+        </select>
+        <select id="campo">
+          <option value="__ALL__">Buscar en todos</option>
+          <option value="ht_kl2">KL2</option>
+          <option value="ht_kl3">KL3</option>
+          <option value="origen_unidad">Origen/Unidad</option>
+          <option value="referencia">Referencia</option>
+          <option value="division_seccion">División/Sección</option>
+          <option value="responsable">Responsable</option>
+          <option value="oficio">Oficio</option>
+          <option value="observaciones">Observaciones</option>
+        </select>
+        <input id="q" placeholder="Buscar…" />
+        <button id="btnClear" class="btn-outline">Limpiar</button>
+        <button id="btnReload" class="btn-outline">Actualizar</button>
+        <button id="btnLogout" class="btn-outline">Salir</button>
+      </div>
+
+      <div class="table-wrap" style="margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th><th>Hora</th><th>KL2</th><th>KL3</th>
+              <th>Origen/Unidad</th><th>Referencia</th><th>División/Sección</th>
+              <th>Responsable</th><th>Oficio</th><th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div id="empty" class="center muted" style="min-height:120px;display:none">Sin resultados…</div>
+    </div>
+
+    <div class="footer">Actualiza en tiempo real • Optimizado para móviles</div>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+    // TODO: pega tus valores:
+    const SUPABASE_URL = "https://ivrkvqsjknjwxcrguhkb.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2cmt2cXNqa25qd3hjcmd1aGtiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTY1MDE1OCwiZXhwIjoyMDc3MjI2MTU4fQ.8tWTbH9qMyPTtVLiGEpEtL3Hx6LrgjqpL7EIy05WsMo";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const BASE_TABLE = "correspondencia";
+
+    // UI refs
+    const loginCard = document.getElementById("loginCard");
+    const dataCard  = document.getElementById("dataCard");
+    const email = document.getElementById("email");
+    const password = document.getElementById("password");
+    const btnLogin = document.getElementById("btnLogin");
+    const btnBusy  = document.getElementById("btnBusy");
+    const loginError = document.getElementById("loginError");
+
+    const userChip = document.getElementById("userChip");
+    const estado = document.getElementById("estado");
+    const campo  = document.getElementById("campo");
+    const q      = document.getElementById("q");
+    const btnClear  = document.getElementById("btnClear");
+    const btnReload = document.getElementById("btnReload");
+    const btnLogout = document.getElementById("btnLogout");
+    const tbody  = document.getElementById("tbody");
+    const empty  = document.getElementById("empty");
+
+    let cache = [];
+    let channel = null;
+
+    function setBusy(on){
+      btnLogin.classList.toggle("hidden", on);
+      btnBusy.classList.toggle("hidden", !on);
+    }
+
+    function showLogin(){
+      dataCard.classList.add("hidden");
+      loginCard.classList.remove("hidden");
+      loginError.textContent = "";
+      setBusy(false);
+    }
+    function showData(user){
+      loginCard.classList.add("hidden");
+      dataCard.classList.remove("hidden");
+      userChip.textContent = user?.email ?? "";
+    }
+
+    function row(r){
+      const td = (t) => `<td>${t ?? ""}</td>`;
+      const tag = r.estado ? `<span class="tag">${r.estado}</span>`:"";
+      return `<tr>
+        ${td(r.fecha_llegada)}${td(r.hora_llegada)}
+        ${td(r.ht_kl2)}${td(r.ht_kl3)}
+        ${td(r.origen_unidad)}${td(r.referencia)}
+        ${td(r.division_seccion)}${td(r.responsable)}
+        ${td(r.oficio)}<td>${tag}</td>
+      </tr>`;
+    }
+
+    function match(r){
+      // estado
+      if(estado.value !== "__ALL__" && r.estado !== estado.value) return false;
+      // texto
+      const qq = (q.value || "").trim().toLowerCase();
+      if(!qq) return true;
+      const field = campo.value;
+      if(field === "__ALL__"){
+        const blob = [
+          r.ht_kl2, r.ht_kl3, r.origen_unidad, r.referencia,
+          r.division_seccion, r.responsable, r.oficio, r.observaciones
+        ].join(" ").toLowerCase();
+        return blob.includes(qq);
+      } else {
+        return ((r[field]||"")+"").toLowerCase().includes(qq);
+      }
+    }
+
+    function paint(){
+      const rows = cache.filter(match).map(row).join("");
+      tbody.innerHTML = rows;
+      empty.style.display = rows ? "none":"flex";
+    }
+
+    async function loadData(){
+      const { data, error } = await supabase
+        .from(BASE_TABLE)
+        .select("*")
+        .order("fecha_llegada", { ascending: false })
+        .order("hora_llegada", { ascending: false });
+      if(error){ console.error(error); return; }
+      cache = data || [];
+      paint();
+    }
+
+    function bindRealtime(){
+      if(channel){ supabase.removeChannel(channel); channel=null; }
+      channel = supabase.channel("realtime:"+BASE_TABLE)
+        .on("postgres_changes", { event: "*", schema: "public", table: BASE_TABLE }, (payload)=>{
+          // Por simplicidad, recargar todo (tabla pequeña). Si quisieras, puedes aplicar diffs.
+          loadData();
+        })
+        .subscribe((status) => {
+          console.log("Realtime status:", status);
+        });
+    }
+
+    // handlers
+    btnLogin.addEventListener("click", async ()=>{
+      setBusy(true);
+      loginError.textContent = "";
+      try{
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.value.trim(), password: password.value
+        });
+        if(error || !data.user){
+          loginError.textContent = "Credenciales inválidas.";
+          setBusy(false);
+          return;
+        }
+        // opcional: podrías verificar rol con un RPC o leyendo profiles.
+        showData(data.user);
+        await loadData();
+        bindRealtime();
+      }catch(e){
+        console.error(e);
+        loginError.textContent = "No hay conexión o error temporal.";
+        setBusy(false);
+      }
+    });
+
+    btnReload.addEventListener("click", loadData);
+    btnClear.addEventListener("click", ()=>{ q.value=""; estado.value="__ALL__"; campo.value="__ALL__"; paint(); });
+    q.addEventListener("keydown", (e)=>{ if(e.key==="Enter") paint(); })
+    estado.addEventListener("change", paint);
+    campo.addEventListener("change", paint);
+
+    btnLogout.addEventListener("click", async ()=>{
+      await supabase.auth.signOut();
+      if(channel){ supabase.removeChannel(channel); channel=null; }
+      showLogin();
+    });
+
+    // Si ya hay sesión (p. ej. recordada)
+    (async ()=>{
+      const { data } = await supabase.auth.getSession();
+      if(data?.session?.user){
+        showData(data.session.user);
+        await loadData();
+        bindRealtime();
+      }else{
+        showLogin();
+      }
+    })();
+  </script>
+</body>
+</html>
